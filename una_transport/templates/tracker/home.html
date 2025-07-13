@@ -1,0 +1,142 @@
+    {% extends 'base.html' %}
+    {% load static %}
+
+    {# Contenido de horarios movido al sidebar_content en base.html #}
+    {% block sidebar_content %}
+        <div class="sidebar-content">
+            <h3>Horarios de Salida</h3>
+            <div class="horario-grupo">
+                <h4>Desde Parque Dante Nava:</h4>
+                <ul>
+                    <li>6:10 a.m.</li>
+                    <li>6:15 a.m.</li>
+                    <li>6:20 a.m.</li>
+                </ul>
+            </div>
+            <div class="horario-grupo">
+                <h4>Desde Centro Poblado de Salcedo:</h4>
+                <ul>
+                    <li>6:35 a.m.</li>
+                </ul>
+            </div>
+            <div class="horario-grupo">
+                <h4>Desde la Universidad:</h4>
+                <ul>
+                    <li>Mediodía: 12:00 p.m. - 2:00 p.m.</li>
+                    <li>Tarde/Noche: 5:30 p.m. - 8:00 p.m.</li>
+                </ul>
+            </div>
+        </div>
+    {% endblock %}
+
+    {% block content %}
+        {# El div del mapa ahora ocupará todo el espacio disponible en <main> #}
+        <div id="map"></div> 
+    {% endblock %}
+
+    {% block extra_js %}
+    <script>
+         const map = L.map('map', {
+        center: [-15.8402, -70.0219],
+        zoom: 13,
+        maxZoom: 18 // O el valor más alto que necesites/quieras para tu mapa
+    });
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+        
+        let busMarkers = {}; 
+        let routePolylines = {};
+
+        const paraderosClusterGroup = L.markerClusterGroup({
+        disableClusteringAtZoom: 18 // Los paraderos se muestran individualmente a partir de este zoom
+         });
+
+
+        map.addLayer(paraderosClusterGroup);
+
+        const publicBusIcon = L.icon({
+            iconUrl: '{% static "img/bus_icon.png" %}', 
+            iconSize: [38, 38], 
+            iconAnchor: [19, 38], 
+            popupAnchor: [0, -38] 
+        });
+
+        const paraderoIcon = L.icon({
+            iconUrl: '{% static "img/parada.png" %}', 
+            iconSize: [30, 30], 
+            iconAnchor: [15, 30], 
+            popupAnchor: [0, -30] 
+        });
+        
+        function loadBusLocations() {
+            fetch('/api/bus-locations/')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    for (const busId in busMarkers) {
+                        map.removeLayer(busMarkers[busId]);
+                    }
+                    busMarkers = {}; 
+
+                    data.locations.forEach(location => {
+                        const marker = L.marker([location.lat, location.lng], { icon: publicBusIcon }) 
+                            .addTo(map)
+                            .bindPopup(`<b>Bus ${location.nombre}</b><br>Ruta: ${location.ruta}`);
+                        busMarkers[location.bus_id] = marker; 
+                    });
+                })
+                .catch(error => {
+                    console.error('Error al cargar ubicaciones de buses:', error);
+                });
+        }
+        
+        function loadRoutes() {
+            fetch('/api/rutas/')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    for (const routeId in routePolylines) {
+                        map.removeLayer(routePolylines[routeId]);
+                    }
+                    routePolylines = {}; 
+
+                    paraderosClusterGroup.clearLayers(); 
+
+                    data.rutas.forEach(ruta => {
+                        if (ruta.ruta_polyline && ruta.ruta_polyline.length > 0) {
+                            const polyline = L.polyline(ruta.ruta_polyline, {
+                                color: ruta.color, 
+                                weight: 3,         
+                                opacity: 0.7       
+                            }).addTo(map);
+                            routePolylines[ruta.id] = polyline; 
+                        }
+                        
+                        ruta.paraderos.forEach(paradero => {
+                            const paraderoMarker = L.marker([paradero.lat, paradero.lng], { icon: paraderoIcon }) 
+                                .bindPopup(`<b>${paradero.nombre}</b><br>Ruta: ${ruta.nombre}`);
+                            paraderosClusterGroup.addLayer(paraderoMarker); 
+                        });
+                    });
+                })
+                .catch(error => {
+                    console.error('Error al cargar rutas:', error);
+                });
+        }
+        
+        loadBusLocations();
+        loadRoutes();
+        
+        setInterval(loadBusLocations, 3000); 
+    </script>
+    {% endblock %}

@@ -1,0 +1,249 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="staff-container">
+    <h2>Panel de Control - Bus {{ bus.nombre }}</h2>
+    <div class="controls">
+        <button id="startTracking">Iniciar Seguimiento</button>
+        <button id="stopTracking">Detener Seguimiento</button>
+        <div id="status">Estado: Inactivo</div>
+        <div id="currentLocation"></div>
+    </div>
+    <div id="staffMap"></div>
+
+    {% csrf_token %} 
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let tracking = false;
+    let watchId = null;
+    let driverMarker = null; 
+    let lastSentLocation = null; 
+    let otherBusLocationsInterval = null; 
+
+    const staffMap = L.map('staffMap').setView([-15.8402, -70.0219], 13); 
+    
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors' 
+    }).addTo(staffMap);
+
+    // --- NUEVO: Grupo de marcadores para clusters en el staff map ---
+    const paraderosClusterGroupStaff = L.markerClusterGroup();
+    staffMap.addLayer(paraderosClusterGroupStaff); // Añadir el grupo al mapa del staff
+
+    const busIcon = L.icon({
+        iconUrl: '{% static "img/bus_icon.png" %}', 
+        iconSize: [38, 38], 
+        iconAnchor: [19, 38], 
+        popupAnchor: [0, -38] 
+    });
+
+    const paraderoIconStaff = L.icon({
+        iconUrl: '{% static "img/parada.png" %}', 
+        iconSize: [30, 30], 
+        iconAnchor: [15, 30], 
+        popupAnchor: [0, -30] 
+    });
+    
+    let routePolylinesStaff = {};
+    let paraderoMarkersStaff = {}; // Este objeto ya no es estrictamente necesario para el clustering, pero lo mantenemos por si se usa para otra cosa.
+    let otherBusMarkers = {}; 
+
+    function loadRoutesStaff() {
+        fetch('/api/rutas/')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                for (const routeId in routePolylinesStaff) {
+                    staffMap.removeLayer(routePolylinesStaff[routeId]);
+                }
+                routePolylinesStaff = {}; 
+
+                // --- NUEVO: Limpiar el grupo de clusters del staff antes de añadir nuevos paraderos ---
+                paraderosClusterGroupStaff.clearLayers(); 
+
+                data.rutas.forEach(ruta => {
+                    if (ruta.ruta_polyline && ruta.ruta_polyline.length > 0) {
+                        const polyline = L.polyline(ruta.ruta_polyline, {
+                            color: ruta.color, 
+                            weight: 3,         
+                            opacity: 0.7       
+                        }).addTo(staffMap); 
+                        routePolylinesStaff[ruta.id] = polyline; 
+                    }
+                    
+                    ruta.paraderos.forEach(paradero => {
+                        // --- NUEVO: Añadir el marcador al grupo de clusters del staff ---
+                        const paraderoMarker = L.marker([paradero.lat, paradero.lng], { icon: paraderoIconStaff }) 
+                            .bindPopup(`<b>${paradero.nombre}</b><br>Ruta: ${ruta.nombre}`);
+                        paraderosClusterGroupStaff.addLayer(paraderoMarker); 
+                    });
+                });
+            })
+            .catch(error => {
+                console.error('Error al cargar rutas en el mapa del staff:', error);
+            });
+    }
+
+    function loadOtherBusLocationsStaff() {
+        fetch('/api/bus-locations/')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                const currentBusId = parseInt('{{ bus.id }}'); 
+
+                for (const busId in otherBusMarkers) {
+                    if (parseInt(busId) !== currentBusId) { 
+                        staffMap.removeLayer(otherBusMarkers[busId]);
+                    }
+                }
+                otherBusMarkers = {}; 
+
+                data.locations.forEach(location => {
+                    if (location.bus_id !== currentBusId) {
+                        const marker = L.marker([location.lat, location.lng], { icon: busIcon })
+                            .addTo(staffMap)
+                            .bindPopup(`<b>Bus ${location.nombre}</b><br>Ruta: ${location.ruta}`);
+                        otherBusMarkers[location.bus_id] = marker;
+                    }
+                });
+            })
+            .catch(error => {
+                console.error('Error al cargar ubicaciones de otros buses en el staff:', error);
+            });
+    }
+
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+    const csrftoken = getCookie('csrftoken') || document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+
+    document.getElementById('startTracking').addEventListener('click', function() {
+        if (!tracking) {
+            tracking = true;
+            document.getElementById('status').textContent = 'Estado: Activo';
+            document.getElementById('startTracking').disabled = true; 
+            document.getElementById('stopTracking').disabled = false; 
+
+            loadOtherBusLocationsStaff();
+            otherBusLocationsInterval = setInterval(loadOtherBusLocationsStaff, 3000); 
+
+            watchId = navigator.geolocation.watchPosition(
+                function(position) {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    
+                    document.getElementById('currentLocation').textContent = `Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`;
+
+                    staffMap.setView([lat, lng], 15); 
+                    if (driverMarker) {
+                        driverMarker.setLatLng([lat, lng]); 
+                    } else {
+                        driverMarker = L.marker([lat, lng], { icon: busIcon }).addTo(staffMap) 
+                            .bindPopup("Tu ubicación actual").openPopup();
+                    }
+
+                    const currentLocation = JSON.stringify({lat: lat, lng: lng});
+                    if (currentLocation !== lastSentLocation) {
+                        fetch('/api/update-location/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': csrftoken 
+                            },
+                            body: JSON.stringify({lat: lat, lng: lng})
+                        })
+                        .then(response => {
+                            if (!response.ok) {
+                                return response.json().then(err => { throw new Error(err.error || 'Server error'); });
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            if (data.success) {
+                                console.log('Ubicación enviada con éxito:', lat, lng);
+                                lastSentLocation = currentLocation;
+                            } else {
+                                console.error('Error al enviar ubicación (backend):', data.error);
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error de red o CSRF al enviar ubicación:', error);
+                            if (error.message && error.message.includes('CSRF')) {
+                                console.warn('Posible problema de CSRF. Intenta recargar la página.');
+                            }
+                        });
+                    }
+                },
+                function(error) {
+                    console.error('Error obteniendo ubicación:', error);
+                    document.getElementById('status').textContent = `Error: ${error.message}`;
+                    tracking = false;
+                    document.getElementById('startTracking').disabled = false;
+                    document.getElementById('stopTracking').disabled = true;
+                    if (otherBusLocationsInterval) {
+                        clearInterval(otherBusLocationsInterval);
+                        otherBusLocationsInterval = null;
+                    }
+                },
+                {
+                    enableHighAccuracy: true, 
+                    timeout: 5000,            
+                    maximumAge: 0             
+                }
+            );
+        }
+    });
+    
+    document.getElementById('stopTracking').addEventListener('click', function() {
+        if (tracking) {
+            tracking = false;
+            document.getElementById('status').textContent = 'Estado: Inactivo';
+            document.getElementById('startTracking').disabled = false;
+            document.getElementById('stopTracking').disabled = true;
+            navigator.geolocation.clearWatch(watchId); 
+            if (driverMarker) {
+                staffMap.removeLayer(driverMarker); 
+                driverMarker = null;
+            }
+            document.getElementById('currentLocation').textContent = ''; 
+
+            for (const busId in otherBusMarkers) {
+                staffMap.removeLayer(otherBusMarkers[busId]);
+            }
+            otherBusMarkers = {};
+
+            if (otherBusLocationsInterval) {
+                clearInterval(otherBusLocationsInterval); 
+                otherBusLocationsInterval = null;
+            }
+        }
+    });
+
+    document.getElementById('stopTracking').disabled = true;
+
+    loadRoutesStaff();
+</script>
+{% endblock %}

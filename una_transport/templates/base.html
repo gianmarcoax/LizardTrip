@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}LizardTrip{% endblock %}</title> {# Título de la página #}
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+</head>
+<body>
+    {# --- Encabezado --- #}
+    <header>
+        <a href="{% url 'home' %}" class="logo">
+            <img src="{% static 'img/logo_lizard.png' %}" alt="LizardTrip Logo"> {# Tu logo aquí #}
+            LizardTrip {# Nombre de tu web #}
+        </a>
+        <button class="hamburger-menu" id="hamburgerMenu">
+            <span></span>
+            <span></span>
+            <span></span>
+        </button>
+    </header>
+
+    {# --- Sidebar (Menú Desplegable) --- #}
+    <div class="sidebar" id="sidebar">
+        <nav>
+            <ul>
+                <li><a href="{% url 'home' %}">Inicio</a></li>
+                {% if user.is_authenticated %}
+                    <li><a href="{% url 'staff_dashboard' %}">Panel de Personal</a></li>
+                    <li><a href="{% url 'logout' %}">Cerrar Sesión</a></li>
+                {% else %}
+                    <li><a href="{% url 'login' %}">Iniciar Sesión</a></li>
+                {% endif %}
+                {# Opciones adicionales en el menú #}
+                <li><a href="#" id="showLegend">Mostrar Leyenda</a></li> {# Cambiado a "Mostrar Leyenda" #}
+            </ul>
+        </nav>
+        {% block sidebar_content %}
+        {% endblock %}
+    </div>
+
+    {# --- Contenido Principal --- #}
+    <main>
+        {% block content %}
+        {% endblock %}
+    </main>
+
+    {# --- Contenedor de la Leyenda (flotante sobre el mapa) --- #}
+    <div class="legend-container" id="mapLegend">
+        <h4>Leyenda</h4>
+        <div class="legend-item">
+            <div class="legend-icon bus"></div>
+            <span>Bus en tránsito</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-icon paradero"></div>
+            <span>Paradero</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color-box ruta-t1"></div>
+            <span>Ruta [R1]: Universidad a parque Dante Nava</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color-box ruta-t1"></div>
+            <span>Ruta [R2]: Parque Dante Nava a Universdad</span>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    
+    {% block extra_js %}
+    {% endblock %}
+
+    <script>
+        // JavaScript para el menú hamburguesa
+        const hamburgerMenu = document.getElementById('hamburgerMenu');
+        const sidebar = document.getElementById('sidebar');
+        const mapLegend = document.getElementById('mapLegend'); // Obtener el contenedor de la leyenda
+        const showLegendButton = document.getElementById('showLegend'); // Botón para mostrar/ocultar leyenda
+
+        hamburgerMenu.addEventListener('click', () => {
+            sidebar.classList.toggle('open');
+            hamburgerMenu.classList.toggle('open');
+        });
+
+        // Cerrar sidebar si se hace clic fuera
+        document.addEventListener('click', (event) => {
+            if (!hamburgerMenu.contains(event.target) && !sidebar.contains(event.target) && sidebar.classList.contains('open')) {
+                sidebar.classList.remove('open');
+                hamburgerMenu.classList.remove('open');
+            }
+        });
+
+        // Cerrar sidebar al hacer clic en un enlace
+        sidebar.querySelectorAll('a').forEach(link => {
+            link.addEventListener('click', () => {
+                if (sidebar.classList.contains('open')) {
+                    sidebar.classList.remove('open');
+                    hamburgerMenu.classList.remove('open');
+                }
+            });
+        });
+
+        // Lógica para mostrar/ocultar la leyenda
+        showLegendButton.addEventListener('click', (event) => {
+            event.preventDefault(); // Evitar que el enlace navegue
+            mapLegend.classList.toggle('open');
+        });
+    </script>
+</body>
+</html>
