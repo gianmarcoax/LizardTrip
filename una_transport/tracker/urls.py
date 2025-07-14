@@ -14,4 +14,8 @@ urlpatterns = [
     path('logout/', views.driver_logout_view, name='logout'), 
     path('api/paraderos/', views.get_paraderos, name='api_paraderos'),
     path('api/paradero-info/<int:paradero_id>/', views.paradero_info, name='api_paradero_info'),
+    path('api/bus-eta/', views.get_bus_eta, name='api_bus_eta'),
+    path('api/paradero-eta/<int:paradero_id>/', views.get_paradero_eta, name='api_paradero_eta'),
+    path('api/buses-next-stop/', views.get_buses_with_next_stop, name='api_buses_next_stop'),
+    path('api/buses-next-stop-mejorado/', views.get_buses_with_next_stop_mejorado, name='api_buses_next_stop_mejorado'),
 ]

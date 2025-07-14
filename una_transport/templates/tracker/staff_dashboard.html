@@ -2,13 +2,92 @@
 {% load static %}
 
 {% block content %}
+<style>
+    .staff-container {
+        height: calc(100vh - 60px);
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .staff-header {
+        padding: 15px;
+        background-color: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .controls {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    
+    .controls button {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 500;
+    }
+    
+    #startTracking {
+        background-color: #28a745;
+        color: white;
+    }
+    
+    #stopTracking {
+        background-color: #dc3545;
+        color: white;
+    }
+    
+    #startTracking:disabled, #stopTracking:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+    
+    #status {
+        font-weight: bold;
+        margin-left: 10px;
+    }
+    
+    #currentLocation {
+        font-family: monospace;
+        font-size: 12px;
+        color: #666;
+    }
+    
+    #staffMap {
+        flex: 1;
+        width: 100%;
+        position: relative;
+    }
+    
+    /* Estilos para mejorar la experiencia con los controles de Google Maps */
+    .gm-style-moc {
+        background-color: rgba(255, 255, 255, 0.9) !important;
+        border-radius: 4px !important;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3) !important;
+    }
+    
+    .gm-style-moc button {
+        background-color: rgba(255, 255, 255, 0.9) !important;
+        border: 1px solid rgba(0, 0, 0, 0.2) !important;
+    }
+    
+    .gm-style-moc button:hover {
+        background-color: rgba(255, 255, 255, 1) !important;
+    }
+</style>
+
 <div class="staff-container">
-    <h2>Panel de Control - Bus {{ bus.nombre }}</h2>
-    <div class="controls">
-        <button id="startTracking">Iniciar Seguimiento</button>
-        <button id="stopTracking">Detener Seguimiento</button>
-        <div id="status">Estado: Inactivo</div>
-        <div id="currentLocation"></div>
+    <div class="staff-header">
+        <h2>Panel de Control - Bus {{ bus.nombre }}</h2>
+        <div class="controls">
+            <button id="startTracking">Iniciar Seguimiento</button>
+            <button id="stopTracking">Detener Seguimiento</button>
+            <div id="status">Estado: Inactivo</div>
+            <div id="currentLocation"></div>
+        </div>
     </div>
     <div id="staffMap"></div>
 
@@ -18,39 +97,113 @@
 
 {% block extra_js %}
 <script>
+    let staffMap; // Variable global para el mapa de Google
     let tracking = false;
     let watchId = null;
     let driverMarker = null; 
     let lastSentLocation = null; 
     let otherBusLocationsInterval = null; 
-
-    const staffMap = L.map('staffMap').setView([-15.8402, -70.0219], 13); 
-    
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors' 
-    }).addTo(staffMap);
-
-    // --- NUEVO: Grupo de marcadores para clusters en el staff map ---
-    const paraderosClusterGroupStaff = L.markerClusterGroup();
-    staffMap.addLayer(paraderosClusterGroupStaff); // Añadir el grupo al mapa del staff
-
-    const busIcon = L.icon({
-        iconUrl: '{% static "img/bus_icon.png" %}', 
-        iconSize: [38, 38], 
-        iconAnchor: [19, 38], 
-        popupAnchor: [0, -38] 
-    });
-
-    const paraderoIconStaff = L.icon({
-        iconUrl: '{% static "img/parada.png" %}', 
-        iconSize: [30, 30], 
-        iconAnchor: [15, 30], 
-        popupAnchor: [0, -30] 
-    });
-    
     let routePolylinesStaff = {};
-    let paraderoMarkersStaff = {}; // Este objeto ya no es estrictamente necesario para el clustering, pero lo mantenemos por si se usa para otra cosa.
-    let otherBusMarkers = {}; 
+    let paraderoMarkersStaff = {};
+    let otherBusMarkers = {};
+
+    // Función para crear un marcador de bus con una imagen personalizada
+    function createBusMarker(lat, lng, title, isDriver = false) {
+        return new google.maps.Marker({
+            position: { lat: lat, lng: lng },
+            map: staffMap,
+            icon: {
+                url: '{% static "img/bus_icon.png" %}',
+                scaledSize: new google.maps.Size(38, 38),
+                anchor: new google.maps.Point(19, 38)
+            },
+            title: title,
+            zIndex: isDriver ? 1000 : 1 // El marcador del conductor siempre arriba
+        });
+    }
+
+    // Función para crear un marcador de paradero con una imagen personalizada
+    function createParaderoMarker(lat, lng, title) {
+        return new google.maps.Marker({
+            position: { lat: lat, lng: lng },
+            map: staffMap,
+            icon: {
+                url: '{% static "img/parada.png" %}',
+                scaledSize: new google.maps.Size(30, 30),
+                anchor: new google.maps.Point(15, 30)
+            },
+            title: title
+        });
+    }
+
+    // Función principal para inicializar el mapa de Google
+    function initStaffMap() {
+        staffMap = new google.maps.Map(document.getElementById('staffMap'), {
+            center: { lat: -15.8402, lng: -70.0219 }, // Puno, Perú
+            zoom: 15, // Zoom más cercano para ver mejor las rutas
+            mapTypeId: 'roadmap',
+            
+            // Controles de navegación y zoom
+            zoomControl: true,
+            zoomControlOptions: {
+                position: google.maps.ControlPosition.RIGHT_CENTER
+            },
+            
+            // Controles de navegación con flechitas
+            panControl: true,
+            panControlOptions: {
+                position: google.maps.ControlPosition.TOP_LEFT
+            },
+            
+            // Control de tipo de mapa (satélite, mapa, híbrido, terreno)
+            mapTypeControl: true,
+            mapTypeControlOptions: {
+                style: google.maps.MapTypeControlStyle.HORIZONTAL_BAR,
+                position: google.maps.ControlPosition.TOP_RIGHT,
+                mapTypeIds: ['roadmap', 'satellite', 'hybrid', 'terrain']
+            },
+            
+            // Control de Street View (muñequito)
+            streetViewControl: true,
+            streetViewControlOptions: {
+                position: google.maps.ControlPosition.RIGHT_TOP
+            },
+            
+            // Control de pantalla completa
+            fullscreenControl: true,
+            fullscreenControlOptions: {
+                position: google.maps.ControlPosition.RIGHT_TOP
+            },
+            
+            // Control de escala
+            scaleControl: true,
+            
+            // Rotación del mapa (útil para orientación)
+            rotateControl: true,
+            rotateControlOptions: {
+                position: google.maps.ControlPosition.LEFT_TOP
+            },
+            
+            // Gestos del mapa
+            gestureHandling: 'greedy', // Permite zoom con scroll sin necesidad de Ctrl/Cmd
+            
+            // Estilos personalizados para el mapa (opcional)
+            styles: [
+                {
+                    featureType: 'poi',
+                    elementType: 'labels',
+                    stylers: [{ visibility: 'off' }]
+                }
+            ]
+        });
+
+        // Cargar rutas y buses activos al iniciar
+        loadRoutesStaff();
+        loadOtherBusLocationsStaff();
+        
+        // Actualizar ubicaciones de otros buses cada 3 segundos
+        setInterval(loadOtherBusLocationsStaff, 3000);
+    }
 
     function loadRoutesStaff() {
         fetch('/api/rutas/')
@@ -61,29 +214,42 @@
                 return response.json();
             })
             .then(data => {
+                // Limpiar polilíneas y marcadores de paraderos anteriores
                 for (const routeId in routePolylinesStaff) {
-                    staffMap.removeLayer(routePolylinesStaff[routeId]);
+                    routePolylinesStaff[routeId].setMap(null);
                 }
-                routePolylinesStaff = {}; 
+                routePolylinesStaff = {};
 
-                // --- NUEVO: Limpiar el grupo de clusters del staff antes de añadir nuevos paraderos ---
-                paraderosClusterGroupStaff.clearLayers(); 
+                for (const paraderoId in paraderoMarkersStaff) {
+                    paraderoMarkersStaff[paraderoId].setMap(null);
+                }
+                paraderoMarkersStaff = {};
 
                 data.rutas.forEach(ruta => {
+                    // Dibujar polilíneas
                     if (ruta.ruta_polyline && ruta.ruta_polyline.length > 0) {
-                        const polyline = L.polyline(ruta.ruta_polyline, {
-                            color: ruta.color, 
-                            weight: 3,         
-                            opacity: 0.7       
-                        }).addTo(staffMap); 
-                        routePolylinesStaff[ruta.id] = polyline; 
+                        const polylinePath = ruta.ruta_polyline.map(coord => ({ lat: coord[0], lng: coord[1] }));
+                        const polyline = new google.maps.Polyline({
+                            path: polylinePath,
+                            geodesic: true,
+                            strokeColor: ruta.color,
+                            strokeOpacity: 0.7,
+                            strokeWeight: 3
+                        });
+                        polyline.setMap(staffMap);
+                        routePolylinesStaff[ruta.id] = polyline;
                     }
                     
+                    // Añadir marcadores de paraderos
                     ruta.paraderos.forEach(paradero => {
-                        // --- NUEVO: Añadir el marcador al grupo de clusters del staff ---
-                        const paraderoMarker = L.marker([paradero.lat, paradero.lng], { icon: paraderoIconStaff }) 
-                            .bindPopup(`<b>${paradero.nombre}</b><br>Ruta: ${ruta.nombre}`);
-                        paraderosClusterGroupStaff.addLayer(paraderoMarker); 
+                        const marker = createParaderoMarker(paradero.lat, paradero.lng, paradero.nombre);
+                        const infoWindow = new google.maps.InfoWindow({
+                            content: `<b>${paradero.nombre}</b><br>Ruta: ${ruta.nombre}`
+                        });
+                        marker.addListener('click', () => {
+                            infoWindow.open(staffMap, marker);
+                        });
+                        paraderoMarkersStaff[paradero.id] = marker;
                     });
                 });
             })
@@ -101,20 +267,38 @@
                 return response.json();
             })
             .then(data => {
-                const currentBusId = parseInt('{{ bus.id }}'); 
+                const currentBusId = parseInt('{{ bus.id }}');
+                const activeBusIds = new Set(data.locations.map(loc => loc.bus_id));
 
+                // Eliminar marcadores de buses que ya no están activos (excepto el del conductor)
                 for (const busId in otherBusMarkers) {
-                    if (parseInt(busId) !== currentBusId) { 
-                        staffMap.removeLayer(otherBusMarkers[busId]);
+                    if (!activeBusIds.has(parseInt(busId))) {
+                        otherBusMarkers[busId].setMap(null);
+                        delete otherBusMarkers[busId];
                     }
                 }
-                otherBusMarkers = {}; 
 
                 data.locations.forEach(location => {
-                    if (location.bus_id !== currentBusId) {
-                        const marker = L.marker([location.lat, location.lng], { icon: busIcon })
-                            .addTo(staffMap)
-                            .bindPopup(`<b>Bus ${location.nombre}</b><br>Ruta: ${location.ruta}`);
+                    // Mostrar todos los buses activos, incluyendo el del conductor
+                    if (otherBusMarkers[location.bus_id]) {
+                        // Actualizar posición del marcador existente
+                        otherBusMarkers[location.bus_id].setPosition({ lat: location.lat, lng: location.lng });
+                        otherBusMarkers[location.bus_id].setTitle(`Bus ${location.nombre} - Ruta: ${location.ruta}`);
+                        
+                        // Si es el bus del conductor, asegurar que esté por encima
+                        if (location.bus_id === currentBusId) {
+                            otherBusMarkers[location.bus_id].setZIndex(1000);
+                        }
+                    } else {
+                        // Crear nuevo marcador
+                        const isDriver = location.bus_id === currentBusId;
+                        const marker = createBusMarker(location.lat, location.lng, `Bus ${location.nombre} - Ruta: ${location.ruta}`, isDriver);
+                        const infoWindow = new google.maps.InfoWindow({
+                            content: `<b>Bus ${location.nombre}</b><br>Ruta: ${location.ruta}${isDriver ? '<br><strong>(Tu bus)</strong>' : ''}`
+                        });
+                        marker.addListener('click', () => {
+                            infoWindow.open(staffMap, marker);
+                        });
                         otherBusMarkers[location.bus_id] = marker;
                     }
                 });
@@ -147,8 +331,11 @@
             document.getElementById('startTracking').disabled = true; 
             document.getElementById('stopTracking').disabled = false; 
 
-            loadOtherBusLocationsStaff();
-            otherBusLocationsInterval = setInterval(loadOtherBusLocationsStaff, 3000); 
+            // La carga de buses activos ya está configurada al iniciar el mapa
+            // Solo necesitamos el intervalo para actualizaciones continuas
+            if (!otherBusLocationsInterval) {
+                otherBusLocationsInterval = setInterval(loadOtherBusLocationsStaff, 3000);
+            } 
 
             watchId = navigator.geolocation.watchPosition(
                 function(position) {
@@ -157,12 +344,13 @@
                     
                     document.getElementById('currentLocation').textContent = `Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`;
 
-                    staffMap.setView([lat, lng], 15); 
+                    staffMap.setCenter({ lat: lat, lng: lng });
+                    staffMap.setZoom(16); // Zoom más cercano cuando se inicia tracking
+                    
+                    // El marcador del conductor ya se maneja en loadOtherBusLocationsStaff
+                    // Solo actualizamos la posición si existe un marcador separado
                     if (driverMarker) {
-                        driverMarker.setLatLng([lat, lng]); 
-                    } else {
-                        driverMarker = L.marker([lat, lng], { icon: busIcon }).addTo(staffMap) 
-                            .bindPopup("Tu ubicación actual").openPopup();
+                        driverMarker.setPosition({ lat: lat, lng: lng });
                     }
 
                     const currentLocation = JSON.stringify({lat: lat, lng: lng});
@@ -224,16 +412,12 @@
             document.getElementById('startTracking').disabled = false;
             document.getElementById('stopTracking').disabled = true;
             navigator.geolocation.clearWatch(watchId); 
-            if (driverMarker) {
-                staffMap.removeLayer(driverMarker); 
-                driverMarker = null;
-            }
+            // El marcador del conductor se mantiene visible a través de loadOtherBusLocationsStaff
+            driverMarker = null;
             document.getElementById('currentLocation').textContent = ''; 
 
-            for (const busId in otherBusMarkers) {
-                staffMap.removeLayer(otherBusMarkers[busId]);
-            }
-            otherBusMarkers = {};
+            // No eliminamos los buses activos al detener el tracking
+            // Solo limpiamos el intervalo
 
             if (otherBusLocationsInterval) {
                 clearInterval(otherBusLocationsInterval); 
@@ -243,7 +427,8 @@
     });
 
     document.getElementById('stopTracking').disabled = true;
-
-    loadRoutesStaff();
 </script>
+
+{# Carga asíncrona del SDK de Google Maps JavaScript #}
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC_hXac88ZpMuvgbwsKF6_Eka5_2gNdItc&callback=initStaffMap" async defer></script>
 {% endblock %}

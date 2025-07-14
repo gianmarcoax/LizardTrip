@@ -1,75 +1,299 @@
-    {% extends 'base.html' %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}LizardTrip{% endblock %}</title>
     {% load static %}
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    {# Elimina estas líneas de Leaflet si ya no las usarás #}
+    {# <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" /> #}
+    {# <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" /> #}
+    {# <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" /> #}
 
-    {# Contenido de horarios movido al sidebar_content en base.html #}
-    {% block sidebar_content %}
-        <div class="sidebar-content">
-            <h3>Horarios de Salida</h3>
-            <div class="horario-grupo">
-                <h4>Desde Parque Dante Nava:</h4>
-                <ul>
-                    <li>6:10 a.m.</li>
-                    <li>6:15 a.m.</li>
-                    <li>6:20 a.m.</li>
-                </ul>
-            </div>
-            <div class="horario-grupo">
-                <h4>Desde Centro Poblado de Salcedo:</h4>
-                <ul>
-                    <li>6:35 a.m.</li>
-                </ul>
-            </div>
-            <div class="horario-grupo">
-                <h4>Desde la Universidad:</h4>
-                <ul>
-                    <li>Mediodía: 12:00 p.m. - 2:00 p.m.</li>
-                    <li>Tarde/Noche: 5:30 p.m. - 8:00 p.m.</li>
-                </ul>
-            </div>
+    {# Estilo necesario para que el mapa de Google Maps ocupe todo el espacio #}
+    <style>
+        #map {
+            height: 100%; /* El mapa debe ocupar el 100% de la altura de su contenedor */
+            width: 100%;  /* Y el 100% del ancho */
+            position: absolute; /* Para que ocupe todo el espacio */
+            top: 0;
+            left: 0;
+            z-index: 1; /* Asegura que el mapa esté detrás de otros elementos si los hay */
+        }
+        main {
+            position: relative; /* Asegura que el main sea el padre de #map */
+            height: calc(100vh - 60px); /* Altura total de la ventana menos la altura del header */
+            width: 100%;
+            overflow: hidden; /* Evita scrolls no deseados */
+        }
+        .legend-container { /* Ajusta la posición de la leyenda si es necesario */
+            z-index: 1000; /* Asegúrate de que la leyenda esté por encima del mapa */
+            /* ... otros estilos de leyenda ... */
+        }
+        
+        /* Estilos para mejorar la experiencia con los controles de Google Maps */
+        .gm-style-moc {
+            background-color: rgba(255, 255, 255, 0.9) !important;
+            border-radius: 4px !important;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3) !important;
+        }
+        
+        /* Asegurar que los controles no se superpongan con la leyenda */
+        .legend-container.open {
+            z-index: 1001;
+        }
+        
+        /* Mejorar la visibilidad de los controles en modo satélite */
+        .gm-style-moc button {
+            background-color: rgba(255, 255, 255, 0.9) !important;
+            border: 1px solid rgba(0, 0, 0, 0.2) !important;
+        }
+        
+        .gm-style-moc button:hover {
+            background-color: rgba(255, 255, 255, 1) !important;
+        }
+        
+
+    </style>
+</head>
+<body>
+    {# --- Encabezado --- #}
+    <header>
+        <a href="{% url 'home' %}" class="logo">
+            <img src="{% static 'img/logo_lizard.png' %}" alt="LizardTrip Logo">
+            LizardTrip
+        </a>
+        <button class="hamburger-menu" id="hamburgerMenu">
+            <span></span>
+            <span></span>
+            <span></span>
+        </button>
+    </header>
+
+    {# --- Sidebar (Menú Desplegable) --- #}
+    <div class="sidebar" id="sidebar">
+        <nav>
+            <ul>
+                <li><a href="{% url 'home' %}">Inicio</a></li>
+                {% if user.is_authenticated %}
+                    <li><a href="{% url 'staff_dashboard' %}">Panel de Personal</a></li>
+                    <li><a href="{% url 'logout' %}">Cerrar Sesión</a></li>
+                {% else %}
+                    <li><a href="{% url 'login' %}">Iniciar Sesión</a></li>
+                {% endif %}
+                <li><a href="#" id="showLegend">Mostrar Leyenda</a></li>
+            </ul>
+        </nav>
+        {% block sidebar_content %}
+        {% endblock %}
+    </div>
+
+    {# --- Contenido Principal --- #}
+    <main>
+        <div id="map"></div> {# Aquí se renderizará el mapa de Google #}
+        {% block content %}
+        {% endblock %}
+    </main>
+
+
+
+    {# --- Contenedor de la Leyenda (flotante sobre el mapa) --- #}
+    <div class="legend-container" id="mapLegend">
+        <h4>Leyenda</h4>
+        <div class="legend-item">
+            <div class="legend-icon bus"></div>
+            <span>Bus en tránsito</span>
         </div>
-    {% endblock %}
+        <div class="legend-item">
+            <div class="legend-icon paradero"></div>
+            <span>Paradero</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color-box ruta-t1"></div>
+            <span>Ruta [R1]: Universidad a parque Dante Nava</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color-box ruta-t1"></div> 
+            <span>Ruta [R2]: Parque Dante Nava a Universdad</span>
+        </div>
+    </div>
 
-    {% block content %}
-        {# El div del mapa ahora ocupará todo el espacio disponible en <main> #}
-        <div id="map"></div> 
-    {% endblock %}
+    {# --- Scripts de Google Maps --- #}
+    <script>
+        // JS para el menú hamburguesa y leyenda (sin cambios)
+        const hamburgerMenu = document.getElementById('hamburgerMenu');
+        const sidebar = document.getElementById('sidebar');
+        const mapLegend = document.getElementById('mapLegend');
+        const showLegendButton = document.getElementById('showLegend'); 
+
+        hamburgerMenu.addEventListener('click', () => {
+            sidebar.classList.toggle('open');
+            hamburgerMenu.classList.toggle('open');
+        });
+
+        document.addEventListener('click', (event) => {
+            if (!hamburgerMenu.contains(event.target) && !sidebar.contains(event.target) && sidebar.classList.contains('open')) {
+                sidebar.classList.remove('open');
+                hamburgerMenu.classList.remove('open');
+            }
+        });
+
+        sidebar.querySelectorAll('a').forEach(link => {
+            link.addEventListener('click', () => {
+                if (sidebar.classList.contains('open')) {
+                    sidebar.classList.remove('open');
+                    hamburgerMenu.classList.remove('open');
+                }
+            });
+        });
+
+        showLegendButton.addEventListener('click', (event) => {
+            event.preventDefault(); 
+            mapLegend.classList.toggle('open');
+        });
+        
+
+    </script>
 
     {% block extra_js %}
     <script>
-         const map = L.map('map', {
-        center: [-15.8402, -70.0219],
-        zoom: 13,
-        maxZoom: 18 // O el valor más alto que necesites/quieras para tu mapa
-    });
-        
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors'
-        }).addTo(map);
-        
-        let busMarkers = {}; 
-        let routePolylines = {};
+        let map; // Variable global para el mapa de Google
+        let busMarkers = {}; // Para almacenar los marcadores de los buses
+        let routePolylines = {}; // Para almacenar las polilíneas de las rutas
+        let paraderoMarkers = {}; // Para almacenar los marcadores de los paraderos
 
-        const paraderosClusterGroup = L.markerClusterGroup({
-        disableClusteringAtZoom: 18 // Los paraderos se muestran individualmente a partir de este zoom
-         });
+        // Función para crear un marcador de bus con una imagen personalizada
+        function createBusMarker(lat, lng, title) {
+            return new google.maps.Marker({
+                position: { lat: lat, lng: lng },
+                map: map,
+                icon: {
+                    url: '{% static "img/bus_icon.png" %}', // Tu imagen de bus
+                    scaledSize: new google.maps.Size(38, 38), // Tamaño del icono
+                    anchor: new google.maps.Point(19, 38) // Punto de anclaje (centro inferior)
+                },
+                title: title
+            });
+        }
 
+        // Función para crear un marcador de paradero con una imagen personalizada
+        function createParaderoMarker(lat, lng, title) {
+            return new google.maps.Marker({
+                position: { lat: lat, lng: lng },
+                map: map,
+                icon: {
+                    url: '{% static "img/parada.png" %}', // Tu imagen de paradero
+                    scaledSize: new google.maps.Size(30, 30), // Tamaño del icono
+                    anchor: new google.maps.Point(15, 30) // Punto de anclaje (centro inferior)
+                },
+                title: title
+            });
+        }
 
-        map.addLayer(paraderosClusterGroup);
+        // Función principal para inicializar el mapa de Google
+        function initMap() {
+            map = new google.maps.Map(document.getElementById('map'), {
+                center: { lat: -15.8402, lng: -70.0219 }, // Puno, Perú
+                zoom: 15,
+                mapTypeId: 'roadmap', // 'roadmap', 'satellite', 'hybrid', 'terrain'
+                
+                // Controles de navegación y zoom
+                zoomControl: true, // Botones de zoom (+/-)
+                zoomControlOptions: {
+                    position: google.maps.ControlPosition.RIGHT_CENTER
+                },
+                
+                // Controles de navegación con flechitas
+                panControl: true, // Flechas de navegación
+                panControlOptions: {
+                    position: google.maps.ControlPosition.TOP_LEFT
+                },
+                
+                // Control de tipo de mapa (satélite, mapa, híbrido, terreno)
+                mapTypeControl: true,
+                mapTypeControlOptions: {
+                    style: google.maps.MapTypeControlStyle.HORIZONTAL_BAR,
+                    position: google.maps.ControlPosition.TOP_RIGHT,
+                    mapTypeIds: ['roadmap', 'satellite', 'hybrid', 'terrain']
+                },
+                
+                // Control de Street View (muñequito)
+                streetViewControl: true,
+                streetViewControlOptions: {
+                    position: google.maps.ControlPosition.RIGHT_TOP
+                },
+                
+                // Control de pantalla completa
+                fullscreenControl: true,
+                fullscreenControlOptions: {
+                    position: google.maps.ControlPosition.RIGHT_TOP
+                },
+                
+                // Control de escala
+                scaleControl: true,
+                
+                // Rotación del mapa (útil para orientación)
+                rotateControl: true,
+                rotateControlOptions: {
+                    position: google.maps.ControlPosition.LEFT_TOP
+                },
+                
+                // Gestos del mapa
+                gestureHandling: 'greedy', // Permite zoom con scroll sin necesidad de Ctrl/Cmd
+                
+                // Estilos personalizados para el mapa (opcional)
+                styles: [
+                    {
+                        featureType: 'poi',
+                        elementType: 'labels',
+                        stylers: [{ visibility: 'off' }]
+                    }
+                ]
+            });
 
-        const publicBusIcon = L.icon({
-            iconUrl: '{% static "img/bus_icon.png" %}', 
-            iconSize: [38, 38], 
-            iconAnchor: [19, 38], 
-            popupAnchor: [0, -38] 
-        });
+            // Cargar ubicaciones de buses y rutas al iniciar
+            loadBusLocations();
+            loadRoutes();
 
-        const paraderoIcon = L.icon({
-            iconUrl: '{% static "img/parada.png" %}', 
-            iconSize: [30, 30], 
-            iconAnchor: [15, 30], 
-            popupAnchor: [0, -30] 
-        });
-        
+            // Actualizar ubicaciones de buses cada 3 segundos
+            setInterval(loadBusLocations, 3000);
+            
+            // Agregar listeners para eventos del mapa
+            map.addListener('maptypeid_changed', function() {
+                console.log('Tipo de mapa cambiado a:', map.getMapTypeId());
+            });
+            
+            map.addListener('zoom_changed', function() {
+                console.log('Zoom cambiado a:', map.getZoom());
+            });
+            
+            // Función para centrar el mapa en una ubicación específica
+            window.centerMapOnLocation = function(lat, lng, zoom = 15) {
+                map.setCenter({ lat: lat, lng: lng });
+                map.setZoom(zoom);
+            };
+            
+            // Función para cambiar al modo satélite
+            window.switchToSatellite = function() {
+                map.setMapTypeId('satellite');
+            };
+            
+            // Función para cambiar al modo mapa
+            window.switchToRoadmap = function() {
+                map.setMapTypeId('roadmap');
+            };
+            
+            // Función para activar Street View en una ubicación
+            window.activateStreetView = function(lat, lng) {
+                const panorama = map.getStreetView();
+                panorama.setPosition({ lat: lat, lng: lng });
+                panorama.setVisible(true);
+            };
+        }
+
+        // --- Adaptación de funciones existentes para Google Maps ---
+
         function loadBusLocations() {
             fetch('/api/bus-locations/')
                 .then(response => {
@@ -79,16 +303,37 @@
                     return response.json();
                 })
                 .then(data => {
+                    const activeBusIds = new Set(data.locations.map(loc => loc.bus_id));
+                    // Eliminar marcadores de buses que ya no están activos
                     for (const busId in busMarkers) {
-                        map.removeLayer(busMarkers[busId]);
+                        if (!activeBusIds.has(parseInt(busId))) {
+                            busMarkers[busId].setMap(null); // Quitar del mapa
+                            delete busMarkers[busId];
+                        }
                     }
-                    busMarkers = {}; 
 
                     data.locations.forEach(location => {
-                        const marker = L.marker([location.lat, location.lng], { icon: publicBusIcon }) 
-                            .addTo(map)
-                            .bindPopup(`<b>Bus ${location.nombre}</b><br>Ruta: ${location.ruta}`);
-                        busMarkers[location.bus_id] = marker; 
+                        const newLatLng = new google.maps.LatLng(location.lat, location.lng);
+                        if (busMarkers[location.bus_id]) {
+                            // Actualizar posición del marcador existente
+                            busMarkers[location.bus_id].setPosition(newLatLng);
+                            busMarkers[location.bus_id].setTitle(`Bus ${location.nombre} - Ruta: ${location.ruta}`);
+                            // Si el popup estaba abierto, actualizar su contenido
+                            if (busMarkers[location.bus_id].infoWindow) {
+                                busMarkers[location.bus_id].infoWindow.setContent(`<b>Bus ${location.nombre}</b><br>Ruta: ${location.ruta}`);
+                            }
+                        } else {
+                            // Crear nuevo marcador
+                            const marker = createBusMarker(location.lat, location.lng, `Bus ${location.nombre} - Ruta: ${location.ruta}`);
+                            const infoWindow = new google.maps.InfoWindow({
+                                content: `<b>Bus ${location.nombre}</b><br>Ruta: ${location.ruta}`
+                            });
+                            marker.addListener('click', () => {
+                                infoWindow.open(map, marker);
+                            });
+                            marker.infoWindow = infoWindow; // Asignar infoWindow al marcador para referencia
+                            busMarkers[location.bus_id] = marker;
+                        }
                     });
                 })
                 .catch(error => {
@@ -105,27 +350,59 @@
                     return response.json();
                 })
                 .then(data => {
+                    // Limpiar polilíneas y marcadores de paraderos anteriores
                     for (const routeId in routePolylines) {
-                        map.removeLayer(routePolylines[routeId]);
+                        routePolylines[routeId].setMap(null); // Quitar polilínea del mapa
                     }
-                    routePolylines = {}; 
+                    routePolylines = {};
 
-                    paraderosClusterGroup.clearLayers(); 
+                    for (const paraderoId in paraderoMarkers) {
+                        paraderoMarkers[paraderoId].setMap(null); // Quitar marcador de paradero
+                    }
+                    paraderoMarkers = {}; // Resetear el objeto de paraderos
 
                     data.rutas.forEach(ruta => {
+                        // Dibujar polilíneas
                         if (ruta.ruta_polyline && ruta.ruta_polyline.length > 0) {
-                            const polyline = L.polyline(ruta.ruta_polyline, {
-                                color: ruta.color, 
-                                weight: 3,         
-                                opacity: 0.7       
-                            }).addTo(map);
-                            routePolylines[ruta.id] = polyline; 
+                            const polylinePath = ruta.ruta_polyline.map(coord => ({ lat: coord[0], lng: coord[1] }));
+                            const polyline = new google.maps.Polyline({
+                                path: polylinePath,
+                                geodesic: true, // Para líneas que siguen la curvatura de la tierra
+                                strokeColor: ruta.color,
+                                strokeOpacity: 0.7,
+                                strokeWeight: 3
+                            });
+                            polyline.setMap(map);
+                            routePolylines[ruta.id] = polyline;
                         }
                         
+                        // Añadir marcadores de paraderos
                         ruta.paraderos.forEach(paradero => {
-                            const paraderoMarker = L.marker([paradero.lat, paradero.lng], { icon: paraderoIcon }) 
-                                .bindPopup(`<b>${paradero.nombre}</b><br>Ruta: ${ruta.nombre}`);
-                            paraderosClusterGroup.addLayer(paraderoMarker); 
+                            const marker = createParaderoMarker(paradero.lat, paradero.lng, paradero.nombre);
+                            const infoWindow = new google.maps.InfoWindow({
+                                content: `<b>${paradero.nombre}</b><br>Ruta: ${ruta.nombre}<br>Orientación: ${paradero.orientacion === 'ida' ? 'Ida' : 'Vuelta'}`
+                            });
+
+                            marker.addListener('click', () => {
+                                infoWindow.setContent(`<b>${paradero.nombre}</b><br>Cargando ETA...`);
+                                infoWindow.open(map, marker); // Abrir el popup inmediatamente
+                                fetch(`/api/paradero/${paradero.id}/eta/`)
+                                    .then(response => response.json())
+                                    .then(etaData => {
+                                        let popupContent = `<b>${paradero.nombre}</b><br>Ruta: ${ruta.nombre}<br>Orientación: ${paradero.orientacion === 'ida' ? 'Ida' : 'Vuelta'}`;
+                                        if (etaData.success) {
+                                            popupContent += `<br><br>Próximo bus: <b>${etaData.bus_nombre}</b><br>ETA: ~<b>${etaData.eta_minutes}</b> minutos.<br>(Distancia: ${etaData.distance_km} km)`;
+                                        } else {
+                                            popupContent += `<br><br>${etaData.message}`;
+                                        }
+                                        infoWindow.setContent(popupContent); // Actualizar contenido del popup
+                                    })
+                                    .catch(error => {
+                                        console.error('Error al obtener ETA:', error);
+                                        infoWindow.setContent(`<b>${paradero.nombre}</b><br>Error al cargar ETA.`);
+                                    });
+                            });
+                            paraderoMarkers[paradero.id] = marker; // Almacenar el marcador de paradero
                         });
                     });
                 })
@@ -133,10 +410,39 @@
                     console.error('Error al cargar rutas:', error);
                 });
         }
+
+    </script>
+    {# Carga asíncrona del SDK de Google Maps JavaScript #}
+    {# Asegúrate que la clave API esté disponible en la variable de contexto de Django #}
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC_hXac88ZpMuvgbwsKF6_Eka5_2gNdItc&callback=initMap" async defer></script>
+    
+    {# Cargar componente ETA #}
+    <script src="{% static 'js/eta-display.js' %}"></script>
+    <script>
+        // Inicializar componente ETA después de que el mapa esté listo
+        let etaDisplay = null;
         
-        loadBusLocations();
-        loadRoutes();
+        // Función para inicializar ETA después del mapa
+        function initETA() {
+            if (typeof ETADisplay !== 'undefined' && !etaDisplay) {
+                etaDisplay = new ETADisplay();
+                etaDisplay.init();
+                console.log('✅ Componente ETA inicializado');
+            }
+        }
         
-        setInterval(loadBusLocations, 3000); 
+        // Verificar si ETADisplay está disponible
+        function checkETAReady() {
+            if (typeof ETADisplay !== 'undefined') {
+                initETA();
+            } else {
+                setTimeout(checkETAReady, 100);
+            }
+        }
+        
+        // Iniciar verificación después de un breve delay
+        setTimeout(checkETAReady, 1000);
     </script>
     {% endblock %}
+</body>
+</html>

@@ -18,8 +18,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'tu-clave-secreta-aqui'
 DEBUG = True
 # Claves de API externas
-Maps_API_KEY = 'AIzaSyC_hXac88ZpMuvgbwsKF6_Eka5_2gNdItcAIzaSyC_hXac88ZpMuvgbwsKF6_Eka5_2gNdItc'
-GRAPHHOPPER_API_KEY = 'c0ad5e2e-a8ba-4187-8bfc-33a4397eb12b'  # Reemplaza con tu API key real
+Maps_API_KEY = 'AIzaSyC_hXac88ZpMuvgbwsKF6_Eka5_2gNdItc'
+# En tu settings.py
+VALHALLA_API_URL = 'https://valhalla1.openstreetmap.de/route'
+VALHALLA_API_KEY = None  # Si usas Stadia Maps u otro servicio con API key
 
 ALLOWED_HOSTS = ['tu-usuario.pythonanywhere.com', 'localhost', '127.0.0.1']
 
@@ -33,6 +35,12 @@ INSTALLED_APPS = [
     'corsheaders',
     'tracker',
 ]
+
+# Google OAuth2 credentials
+# GOOGLE_SSO_CLIENT_ID = "your client id here"
+# GOOGLE_SSO_PROJECT_ID = "your project id here"
+# GOOGLE_SSO_CLIENT_SECRET = "your client secret here"
+# GOOGLE_SSO_ALLOWABLE_DOMAINS = ["https://lizardtrip.pythonanywhere.com/"]
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
